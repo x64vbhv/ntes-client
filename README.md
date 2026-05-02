@@ -971,6 +971,7 @@ ntes-client/
 │   ├── __init__.py      # Package exports
 │   ├── client.py        # Main client class
 │   ├── crypto.py        # Encryption layer
+│   ├── pnr.py           # PNR Captcha Solver
 │   ├── exceptions.py    # Custom exceptions
 │   └── utils.py         # Helper functions
 ├── tests/
@@ -1050,7 +1051,7 @@ Not intended for:
 
 ## Changelog
 
-### Version 1.2.0
+### Version 1.1.2
 -  Added support for PNR Status
 
 ### Version 1.1.0
@@ -1075,5 +1076,5 @@ Special thanks to the open-source community for cryptography libraries.
 ---
 
 **Last Updated:** May 2026  
-**Library Version:** 1.0.0  
+**Library Version:** 1.1.2
 **Python Compatibility:** 3.7+
