@@ -1,4 +1,6 @@
 import json
+import os
+import time
 import requests
 from typing import Any, Optional
 
@@ -98,3 +100,73 @@ class NTESClient:
         return self._request(
             f"service=TrainRunningMob&subService=TrainExcpInfo&trainNo={train_no}"
         )
+
+    def pnr_status(self, pnr: str):
+        from .pnr import _solve
+
+        for _ in range(self.retries + 1):
+            try:
+                session = requests.Session()
+
+                session.get(
+                    "https://indianrail.gov.in/enquiry/CaptchaConfig",
+                    headers={
+                        "User-Agent": "Mozilla/5.0",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Referer": "https://indianrail.gov.in/enquiry/PNR/PnrEnquiry.html",
+                        "Accept": "*/*"
+                    }, 
+                    timeout=self.timeout
+                )
+
+                ts = int(time.time() * 1000)
+                img = session.get(
+                    f"https://indianrail.gov.in/enquiry/captchaDraw.png?{ts}",
+                    headers={
+                        "User-Agent": "Mozilla/5.0",
+                        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                        "Referer": "https://indianrail.gov.in/enquiry/PNR/PnrEnquiry.html"
+                    }, 
+                    timeout=self.timeout
+                )
+
+                if img.status_code != 200:
+                    continue
+
+                result = _solve(img.content)
+                if not result or not result.get("success"):
+                    continue
+
+                captcha_val = str(result["answer"])
+
+                resp = session.get(
+                    "https://indianrail.gov.in/enquiry/CommonCaptcha",
+                    params={
+                        "inputCaptcha": captcha_val,
+                        "inputPnrNo": pnr,
+                        "inputPage": "PNR",
+                        "language": "en"
+                    },
+                    headers={
+                        "User-Agent": "Mozilla/5.0",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Accept": "*/*",
+                        "Referer": "https://indianrail.gov.in/enquiry/PNR/PnrEnquiry.html"
+                    }, 
+                    timeout=self.timeout
+                )
+
+                if not resp.text.strip():
+                    continue
+
+                data = resp.json()
+
+                if data.get("errorMessage") == "Captcha not matched":
+                    continue
+
+                return data
+
+            except Exception as e:
+                continue
+
+        raise NTESError("pnr check failed after retries")
