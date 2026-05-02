@@ -860,6 +860,10 @@ Not intended for:
 
 ## Changelog
 
+### Version 1.1.0
+- Added fallback import for Crypto / Cryptodome
+- Fixes ModuleNotFoundError on some Linux/Termux setups
+
 ### Version 1.0.0
 - Initial release
 - Core API methods
