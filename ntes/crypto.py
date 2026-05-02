@@ -1,5 +1,3 @@
-from Cryptodome.Cipher import AES
-from Cryptodome.Util.Padding import pad, unpad
 import base64
 import binascii
 import hashlib
@@ -8,6 +6,12 @@ from typing import Union, Any
 from .exceptions import NTESCryptoError
 from .utils import safe_json_loads
 
+try:
+    from Cryptodome.Cipher import AES
+    from Cryptodome.Util.Padding import pad, unpad
+except ImportError:
+    from Crypto.Cipher import AES
+    from Crypto.Util.Padding import pad, unpad
 
 class NTESCrypto:
     def __init__(self):
