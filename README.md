@@ -13,6 +13,7 @@ NTES Client is an unofficial Python library that provides programmatic access to
 - 🚂 Full train search and tracking capabilities
 - 📍 Live station boards
 - ⏱️ Real-time train status
+- 🎫 PNR status checking with auto-captcha solving
 - 🔄 Automatic retry logic
 - 🎯 Clean, minimal API surface
 
@@ -48,6 +49,9 @@ status = client.live_status("12301", "02-May-2026")
 
 # Check station departures
 departures = client.station_live("NDLS", hours=4)
+
+# Check PNR status
+pnr = client.pnr_status("8106636505")
 ```
 
 ---
@@ -305,6 +309,96 @@ exc = client.exceptions("12301")
 
 ---
 
+#### `pnr_status(pnr: str)`
+
+Check PNR (Passenger Name Record) booking status with automatic captcha solving.
+
+**Parameters:**
+- `pnr` (str): 10-digit PNR number
+
+**Returns:** Dict with booking details and passenger status
+
+**Important Notes:**
+- Uses a different endpoint (`indianrail.gov.in`) than other NTES methods
+- Automatically solves captcha challenges
+- May require multiple retry attempts due to captcha validation
+- Subject to higher failure rates than standard NTES endpoints
+
+**Example (Success):**
+```python
+pnr = client.pnr_status("8106636505")
+# Returns:
+# {
+#   "PNR": "8106636505",
+#   "status": "successful",
+#   "train": [
+#     {
+#       "trainName": "XYZ EXPRESS",
+#       "trainNumber": "12345",
+#       "sourceStation": "NDLS",
+#       "destinationStation": "BCT",
+#       "dateOfJourney": "03-05-2026"
+#     }
+#   ],
+#   "passengers": [
+#     {
+#       "bookingStatus": "CNF-12",
+#       "currentStatus": "CNF-12",
+#       "passengerSerialNumber": "1"
+#     }
+#   ],
+#   "other_info": [
+#     {"bookingFare": "450"},
+#     {"chartStatus": "Prepared"}
+#   ]
+# }
+```
+
+**Common Error Responses:**
+
+Invalid PNR:
+```python
+# {
+#   "errorMessage": "PNR No. is not valid",
+#   "serverId": "appserver",
+#   "generatedTimeStamp": {
+#     "year": 2026,
+#     "month": 5,
+#     "day": 3,
+#     "hour": 2,
+#     "minute": 35,
+#     "second": 32
+#   }
+# }
+```
+
+Flushed/Old PNR:
+```python
+# {
+#   "errorMessage": "FLUSHED PNR / PNR NOT YET GENERATED"
+# }
+```
+
+Captcha Failed (retries automatically):
+```python
+# {
+#   "errorMessage": "Captcha not matched"
+# }
+```
+
+**Booking Status Codes:**
+- `CNF`: Confirmed (with berth/seat number)
+- `RAC`: Reservation Against Cancellation
+- `WL`: Waitlisted
+- `RLWL`: Remote Location Waiting List
+- `PQWL`: Pooled Quota Waiting List
+
+**Chart Status:**
+- `Not Prepared`: Chart not yet prepared
+- `Prepared`: Final chart published
+
+---
+
 ## Error Handling
 
 The library uses custom exceptions for clear error categorization.
@@ -547,6 +641,93 @@ def monitor_train(train_no, start_date, check_interval=300):
 monitor_train("12301", "02-May-2026", check_interval=300)
 ```
 
+### 5. PNR Status Checker
+
+```python
+from ntes import NTESClient, NTESError
+
+def check_pnr_with_details(pnr):
+    """Check PNR and display formatted results"""
+    client = NTESClient()
+    
+    try:
+        result = client.pnr_status(pnr)
+        
+        # Check for errors
+        if "errorMessage" in result:
+            print(f"Error: {result['errorMessage']}")
+            return None
+        
+        # Extract train info
+        train = result.get("train", [{}])[0]
+        print(f"\n{'='*50}")
+        print(f"PNR: {result['PNR']}")
+        print(f"Train: {train.get('trainNumber')} - {train.get('trainName')}")
+        print(f"Route: {train.get('sourceStation')} → {train.get('destinationStation')}")
+        print(f"Journey Date: {train.get('dateOfJourney')}")
+        print(f"{'='*50}\n")
+        
+        # Display passenger details
+        passengers = result.get("passengers", [])
+        for i, passenger in enumerate(passengers, 1):
+            print(f"Passenger {i}:")
+            print(f"  Booking Status: {passenger.get('bookingStatus')}")
+            print(f"  Current Status: {passenger.get('currentStatus')}")
+            print()
+        
+        # Display other info
+        other_info = result.get("other_info", [])
+        for info_dict in other_info:
+            for key, value in info_dict.items():
+                print(f"{key}: {value}")
+        
+        return result
+        
+    except NTESError as e:
+        print(f"Failed to check PNR: {e}")
+        return None
+
+# Usage
+check_pnr_with_details("8106636505")
+```
+
+### 6. Batch PNR Checker
+
+```python
+def monitor_multiple_pnrs(pnr_list):
+    """Check multiple PNRs and alert on status changes"""
+    client = NTESClient()
+    
+    for pnr in pnr_list:
+        try:
+            result = client.pnr_status(pnr)
+            
+            if "errorMessage" in result:
+                print(f"PNR {pnr}: {result['errorMessage']}")
+                continue
+            
+            passengers = result.get("passengers", [])
+            for p in passengers:
+                booking = p.get("bookingStatus", "")
+                current = p.get("currentStatus", "")
+                
+                # Alert if status improved
+                if "CNF" in current and "CNF" not in booking:
+                    print(f"✅ PNR {pnr}: CONFIRMED! {current}")
+                elif "RAC" in current and "WL" in booking:
+                    print(f"📈 PNR {pnr}: Moved to RAC - {current}")
+                else:
+                    print(f"PNR {pnr}: {current}")
+        
+        except Exception as e:
+            print(f"Error checking PNR {pnr}: {e}")
+        
+        time.sleep(2)  # Be respectful with requests
+
+pnrs = ["8106636505", "1234567890", "9876543210"]
+monitor_multiple_pnrs(pnrs)
+```
+
 ---
 
 ## Technical Details
@@ -610,10 +791,19 @@ Return to user
 
 ### Network Configuration
 
+**NTES Endpoints:**
 - **Endpoint:** `https://enquiry.indianrail.gov.in/crisns/AppServAnd`
 - **Method:** POST
 - **Content-Type:** `application/json`
 - **User-Agent:** Android client signature
+- **Used for:** Train search, schedules, live status, station boards, exceptions
+
+**PNR Endpoint:**
+- **Endpoint:** `https://indianrail.gov.in/enquiry/CommonCaptcha`
+- **Method:** GET
+- **Authentication:** Captcha-based validation
+- **Used for:** PNR status checking only
+- **Note:** Higher failure rate due to captcha requirements
 
 ---
 
@@ -818,7 +1008,7 @@ A: Live data updates every 5-10 minutes. Schedules are relatively static.
 A: No, NTES only provides current and near-future data.
 
 **Q: What about PNR status?**  
-A: This library covers NTES endpoints only. PNR is a separate system.
+A: PNR status checking is supported via the `pnr_status()` method. Note that it uses a different backend (indianrail.gov.in) with captcha solving, so it may have higher failure rates than standard NTES methods.
 
 **Q: How do I report bugs?**  
 A: Open an issue on GitHub with reproduction steps.
@@ -859,6 +1049,9 @@ Not intended for:
 ---
 
 ## Changelog
+
+### Version 1.2.0
+-  Added support for PNR Status
 
 ### Version 1.1.0
 - Added fallback import for Crypto / Cryptodome
