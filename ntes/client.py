@@ -90,6 +90,11 @@ class NTESClient:
         return self._request(
             f"service=TrainRunningMob&subService=TrainsAtStationJson&jStation={station_code}&nHr={hours}&jToStation="
         )
+    
+    def trains_between(self, from_station: str, to_station: str, train_type: str = "XXX"):
+        return self._request(
+           f"service=TrainRunningMob&subService=TrainBtwStnJson&stnFrom={from_station}&stnTo={to_station}&trainType={train_type}"
+        )
 
     def live_status(self, train_no: str, start_date: str):
         return self._request(
