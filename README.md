@@ -13,6 +13,7 @@ NTES Client is an unofficial Python library that provides programmatic access to
 - 🚂 Full train search and tracking capabilities
 - 📍 Live station boards
 - ⏱️ Real-time train status
+- 🚉 Route planning between stations
 - 🎫 PNR status checking with auto-captcha solving
 - 🔄 Automatic retry logic
 - 🎯 Clean, minimal API surface
@@ -49,6 +50,9 @@ status = client.live_status("12301", "02-May-2026")
 
 # Check station departures
 departures = client.station_live("NDLS", hours=4)
+
+# Find trains between two stations
+trains_list = client.trains_between("LKO", "GZB")
 
 # Check PNR status
 pnr = client.pnr_status("8106636505")
@@ -399,6 +403,82 @@ Captcha Failed (retries automatically):
 
 ---
 
+#### `trains_between(from_station: str, to_station: str)`
+
+Find all trains running between two stations with schedule and timing details.
+
+**Parameters:**
+- `from_station` (str): Source station code (e.g., "LKO", "NDLS")
+- `to_station` (str): Destination station code (e.g., "GZB", "HWH")
+
+**Returns:** Dict with list of trains and station information
+
+**Example:**
+```python
+trains = client.trains_between("LKO", "GZB")
+# Returns:
+# {
+#   "Trains": [
+#     {
+#       "TrainNumber": "12419",
+#       "TrainName": "GOMTI EXPRESS",
+#       "Source": "LKO",
+#       "Destination": "NDLS",
+#       "FromStation": "LKO",
+#       "toStation": "GZB",
+#       "FromStationName": "LUCKNOW JN.",
+#       "ToStationName": "GHAZIABAD",
+#       "DepTimeFrom": "05:45",
+#       "ArrTimeTo": "14:13",
+#       "TravelTime": "08:28",
+#       "DayOfRun": "Daily",
+#       "TrainType": "SUF",
+#       "TrainTypeDesc": "Superfast",
+#       "ClassOfTravel": ""
+#     }
+#   ],
+#   "StationFrom": "LUCKNOW JN.",
+#   "StationFromCode": "LKO",
+#   "StationTo": "GHAZIABAD",
+#   "StationToCode": "GZB",
+#   "TotalTrains": 40
+# }
+```
+
+**Response Fields:**
+- `Trains[]`: List of trains with detailed information
+  - `TrainNumber`: Train number
+  - `TrainName`: Train name
+  - `Source`: Journey origin station
+  - `Destination`: Journey final station
+  - `FromStation`: Your boarding station
+  - `toStation`: Your destination station
+  - `DepTimeFrom`: Departure time from boarding station
+  - `ArrTimeTo`: Arrival time at destination station
+  - `TravelTime`: Duration between stations (HH:MM)
+  - `DayOfRun`: Operating days (e.g., "Daily", "Mon,Wed,Fri")
+  - `TrainType`: Train category code (SUF, MEX, etc.)
+  - `ClassOfTravel`: Available classes (e.g., "1A,2A,3A,SL")
+- `TotalTrains`: Number of trains found
+- `StationFrom/To`: Station names and codes
+
+**Use Cases:**
+- Plan journeys between two cities
+- Compare train options and timings
+- Find fastest or most convenient trains
+- Check available train types and classes
+
+**Train Type Codes:**
+- `SUF`: Superfast
+- `MEX`: Mail Express
+- `SHT`: Shatabdi
+- `RAJ`: Rajdhani
+- `TEJ`: Tejas
+- `AMTB`: Amrit Bharat
+- `TOD`: Train On Demand
+
+---
+
 ## Error Handling
 
 The library uses custom exceptions for clear error categorization.
@@ -728,6 +808,150 @@ pnrs = ["8106636505", "1234567890", "9876543210"]
 monitor_multiple_pnrs(pnrs)
 ```
 
+### 7. Route Finder & Comparison
+
+```python
+from ntes import NTESClient
+
+def find_best_trains(from_station, to_station, preferred_time=None):
+    """Find and rank trains by travel time"""
+    client = NTESClient()
+    
+    result = client.trains_between(from_station, to_station)
+    trains = result.get("Trains", [])
+    
+    if not trains:
+        print(f"No trains found between {from_station} and {to_station}")
+        return []
+    
+    print(f"\nFound {len(trains)} trains from {result['StationFrom']} to {result['StationTo']}\n")
+    print(f"{'Train':<8} {'Name':<30} {'Depart':<8} {'Arrive':<8} {'Duration':<8} {'Days':<15}")
+    print("="*90)
+    
+    # Sort by travel time
+    sorted_trains = sorted(trains, key=lambda x: x.get('TravelTime', '99:99'))
+    
+    for train in sorted_trains[:10]:  # Show top 10
+        print(f"{train['TrainNumber']:<8} {train['TrainName'][:28]:<30} "
+              f"{train['DepTimeFrom']:<8} {train['ArrTimeTo']:<8} "
+              f"{train['TravelTime']:<8} {train['DayOfRun']:<15}")
+    
+    return sorted_trains
+
+# Usage
+best_trains = find_best_trains("LKO", "NDLS")
+```
+
+### 8. Smart Journey Planner
+
+```python
+def plan_multi_city_journey(route):
+    """Plan journey through multiple cities"""
+    client = NTESClient()
+    
+    print("Multi-City Journey Planner\n")
+    print("="*60)
+    
+    for i in range(len(route) - 1):
+        from_station = route[i]
+        to_station = route[i + 1]
+        
+        print(f"\nLeg {i+1}: {from_station} → {to_station}")
+        print("-"*60)
+        
+        result = client.trains_between(from_station, to_station)
+        trains = result.get("Trains", [])
+        
+        if not trains:
+            print(f"⚠️  No direct trains found")
+            continue
+        
+        # Find fastest train
+        fastest = min(trains, key=lambda x: x.get('TravelTime', '99:99'))
+        
+        print(f"✓ Recommended: {fastest['TrainNumber']} - {fastest['TrainName']}")
+        print(f"  Departure: {fastest['DepTimeFrom']} | Arrival: {fastest['ArrTimeTo']}")
+        print(f"  Duration: {fastest['TravelTime']} | Runs: {fastest['DayOfRun']}")
+        print(f"  Type: {fastest['TrainTypeDesc']}")
+
+# Plan Delhi → Lucknow → Varanasi → Kolkata
+route = ["NDLS", "LKO", "BSB", "HWH"]
+plan_multi_city_journey(route)
+```
+
+### 9. Train Type Filter
+
+```python
+def find_trains_by_type(from_station, to_station, train_types):
+    """Filter trains by type (Superfast, Rajdhani, etc.)"""
+    client = NTESClient()
+    
+    result = client.trains_between(from_station, to_station)
+    trains = result.get("Trains", [])
+    
+    # Filter by train type
+    filtered = [t for t in trains if t.get('TrainType') in train_types]
+    
+    print(f"\n{len(filtered)} {'/'.join(train_types)} trains found:\n")
+    
+    for train in filtered:
+        classes = train.get('ClassOfTravel', 'N/A')
+        print(f"{train['TrainNumber']} - {train['TrainName']}")
+        print(f"  {train['DepTimeFrom']} → {train['ArrTimeTo']} ({train['TravelTime']})")
+        print(f"  Classes: {classes if classes else 'Check availability'}")
+        print(f"  Runs: {train['DayOfRun']}\n")
+    
+    return filtered
+
+# Find only Superfast and Rajdhani trains
+superfast = find_trains_by_type("LKO", "NDLS", ["SUF", "RAJ"])
+
+# Find only AC trains (Shatabdi, Rajdhani, Tejas)
+premium = find_trains_by_type("LKO", "NDLS", ["SHT", "RAJ", "TEJ"])
+```
+
+### 10. Daily Commute Helper
+
+```python
+import datetime
+
+def daily_commute_options(from_station, to_station, arrival_before="09:00"):
+    """Find trains that get you to work on time"""
+    client = NTESClient()
+    
+    result = client.trains_between(from_station, to_station)
+    trains = result.get("Trains", [])
+    
+    # Get current day
+    days_map = {
+        0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu",
+        4: "Fri", 5: "Sat", 6: "Sun"
+    }
+    today = days_map[datetime.datetime.now().weekday()]
+    
+    # Filter trains running today and arriving before deadline
+    suitable = []
+    for train in trains:
+        runs_today = ("Daily" in train['DayOfRun'] or 
+                     today in train['DayOfRun'])
+        arrives_on_time = train['ArrTimeTo'] < arrival_before
+        
+        if runs_today and arrives_on_time:
+            suitable.append(train)
+    
+    print(f"\nTrains running today ({today}) arriving before {arrival_before}:\n")
+    
+    for train in sorted(suitable, key=lambda x: x['ArrTimeTo']):
+        print(f"🚂 {train['TrainNumber']} {train['TrainName']}")
+        print(f"   Depart: {train['DepTimeFrom']} → Arrive: {train['ArrTimeTo']}")
+        print(f"   Duration: {train['TravelTime']}\n")
+    
+    return suitable
+
+# Find morning commute options
+morning_trains = daily_commute_options("LKO", "GZB", "09:00")
+```
+
 ---
 
 ## Technical Details
@@ -971,7 +1195,7 @@ ntes-client/
 │   ├── __init__.py      # Package exports
 │   ├── client.py        # Main client class
 │   ├── crypto.py        # Encryption layer
-│   ├── pnr.py           # PNR Captcha Solver
+│   ├── pnr.py           # PNR captcha solver
 │   ├── exceptions.py    # Custom exceptions
 │   └── utils.py         # Helper functions
 ├── tests/
@@ -1010,6 +1234,9 @@ A: No, NTES only provides current and near-future data.
 
 **Q: What about PNR status?**  
 A: PNR status checking is supported via the `pnr_status()` method. Note that it uses a different backend (indianrail.gov.in) with captcha solving, so it may have higher failure rates than standard NTES methods.
+
+**Q: How do I find trains between two stations?**  
+A: Use the `trains_between(from_station, to_station)` method. It returns all trains with timings, duration, train types, and operating days. You can filter results by travel time, train type, or availability on specific days.
 
 **Q: How do I report bugs?**  
 A: Open an issue on GitHub with reproduction steps.
@@ -1051,11 +1278,14 @@ Not intended for:
 
 ## Changelog
 
-### Version 1.1.3
--  Added trains_between fn
+### Version 1.1.3 (Latest)
+- Added `trains_between()` method for route planning
+- Find all trains between two stations with timings and details
+- Filter by train type, travel time, and operating days
 
 ### Version 1.1.2
--  Added support for PNR Status
+- Added support for PNR Status checking
+- Automatic captcha solving for PNR queries
 
 ### Version 1.1.0
 - Added fallback import for Crypto / Cryptodome
@@ -1079,5 +1309,5 @@ Special thanks to the open-source community for cryptography libraries.
 ---
 
 **Last Updated:** May 2026  
-**Library Version:** 1.1.2
+**Library Version:** 1.1.3  
 **Python Compatibility:** 3.7+

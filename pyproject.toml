@@ -8,7 +8,7 @@ version = "0.1.3"
 description = "Unofficial Python client for NTES (Indian Railways)"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.8"
-license = "MIT" 
+license = { text = "MIT" }
 
 authors = [
     { name = "Vaibhav Chandra" }
@@ -18,7 +18,6 @@ keywords = ["ntes", "indian railways", "train", "railway api"]
 
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
