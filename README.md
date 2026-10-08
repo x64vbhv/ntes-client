@@ -15,6 +15,7 @@ NTES Client is an unofficial Python library that provides programmatic access to
 - ⏱️ Real-time train status
 - 🚉 Route planning between stations
 - 🎫 PNR status checking with auto-captcha solving
+- 📋 Reservation charts via IRCTC online charts (coach composition, vacant berths, berth layouts)
 - 🔄 Automatic retry logic
 - 🎯 Clean, minimal API surface
 
@@ -56,6 +57,11 @@ trains_list = client.trains_between("LKO", "GZB")
 
 # Check PNR status
 pnr = client.pnr_status("8106636505")
+
+# Fetch a reservation chart (IRCTC online charts)
+from ntes import irctc_reservation_chart
+
+chart = irctc_reservation_chart("12931", "ADI", "08-10-2026")
 ```
 
 ---
@@ -479,6 +485,87 @@ trains = client.trains_between("LKO", "GZB")
 
 ---
 
+#### `irctc_reservation_chart(train_no, boarding_station, journey_date=None, ...)`
+
+Alias: `reservation_chart`. Fetch reservation chart data from IRCTC's official
+online-charts service (`https://www.irctc.co.in/online-charts/`). This is a
+separate backend from the NTES API — a standalone function, not a client method.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `train_no` | `str` | — | Train number (e.g. `"12931"`, `"12426"`) |
+| `boarding_station` | `str` | — | Boarding station code (e.g. `"ADI"`, `"NDLS"`) — **required by the API** |
+| `journey_date` | `str` | today | `YYYY-MM-DD`, `DD-MM-YYYY`, `DD/MM/YYYY`, or `DD-MMM-YYYY` |
+| `timeout` | `int` | `30` | HTTP timeout in seconds |
+| `include_vacant_berths` | `bool` | `False` | Also fetch vacant berths (one call per class) |
+| `include_coach_layout` | `bool` | `False` | Also fetch berth-level layout per coach (heavy) |
+| `class_filter` | `list[str]` | `None` | Restrict the above to certain classes (e.g. `["3A"]`) |
+| `chart_type` | `int` | `2` | Chart version for vacant berths (1 = first chart, 2 = later chart) |
+
+**Returns:** dict with chart metadata and coach composition:
+
+```python
+from ntes import irctc_reservation_chart
+
+chart = irctc_reservation_chart("12426", "NDLS", "08-10-2026")
+# Returns:
+# {
+#   "train_no": "12426",
+#   "train_name": "JAMMU RAJDHANI",
+#   "from": "JAT",
+#   "to": "NDLS",
+#   "journey_date": "2026-10-08",
+#   "train_start_date": "2026-10-07",   # may differ for overnight trains
+#   "remote": "LDH",                     # charting station
+#   "chart_one_date": "2026-10-07 17:45:23",
+#   "chart_two_date": "2026-10-08 01:30:07",
+#   "chart_status": {"chartOneFlag": 3, "chartTwoFlag": 1, ...},
+#   "composition": [                     # one entry per coach
+#     {"coachName": "A1", "classCode": "2A", "positionFromEngine": 0, "vacantBerths": 0},
+#     ...
+#   ],
+#   "boarding_station": "NDLS"
+# }
+```
+
+**Optional detail fetches:**
+
+```python
+# Vacant berths (per class) + full berth layout (per coach)
+chart = irctc_reservation_chart(
+    "12931", "ADI", "08-10-2026",
+    include_vacant_berths=True,
+    include_coach_layout=True,
+    class_filter=["CC"],        # keep it light: only one class
+)
+
+chart["vacant_berths"]
+# [{"cls": "CC", "data": {"vbd": [
+#     {"coachName": "C7U", "berthNumber": 116, "from": "BH", "to": "ADI", "splitNo": 1}
+# ], "error": None}}]
+
+chart["coach_layouts"][0]
+# {"coach": "C10L", "cls": "CC", "data": {"bdd": [
+#     {"berthNo": 1, "berthCode": "W", "from": "MMCT", "to": "ADI",
+#      "bsd": [{"splitNo": 1, "quota": "CTG", "occupancy": true}]},
+#     ...
+# ]}}
+```
+
+**Important Notes:**
+- Charts are only prepared a few hours before departure. Looking up a future
+  date raises `IRCTCError: ... Chart not prepared` — that is expected.
+- `boarding_station` is required; the API returns "Chart not prepared" without it.
+- `include_coach_layout=True` makes one request per coach — use
+  `class_filter` to avoid heavy calls on long trains.
+- Uses plain browser-like HTTPS requests (no captcha, no login).
+
+**Raises:** `IRCTCError` on request failures, bad responses, or chart-not-prepared.
+
+---
+
 ## Error Handling
 
 The library uses custom exceptions for clear error categorization.
@@ -486,10 +573,11 @@ The library uses custom exceptions for clear error categorization.
 ### Exception Types
 
 ```python
-from ntes import NTESError, NTESCryptoError
+from ntes import NTESError, NTESCryptoError, IRCTCError
 
-# NTESError - General API/network errors
-# NTESCryptoError - Encryption/decryption failures
+# NTESError        - General NTES/PNR API/network errors
+# NTESCryptoError  - Encryption/decryption failures
+# IRCTCError       - Reservation chart lookup failures (incl. "Chart not prepared")
 ```
 
 ### Error Handling Pattern
@@ -512,7 +600,9 @@ except NTESError as e:
 |-------|-------|----------|
 | `"empty response"` | NTES server issue | Retry after delay |
 | `"invalid json response"` | Malformed data | Report as bug |
-| `"request failed"` | Network timeout | Check connectivity |
+| `"request failed"` | Network/TLS error | Check connectivity; message includes the real cause |
+| `"pnr check failed after retries: ..."` | Captcha/TLS/network failure | Message now carries the underlying error |
+| `"Chart not prepared"` (IRCTCError) | Chart not yet prepared for that train/date | Check closer to departure (charts appear a few hours before) |
 | Train/station alerts | Invalid code | Verify input |
 
 ### Best Practices
@@ -1029,6 +1119,20 @@ Return to user
 - **Used for:** PNR status checking only
 - **Note:** Higher failure rate due to captcha requirements
 
+**Reservation Chart Endpoints (IRCTC online charts):**
+- **Endpoints:**
+  - `POST https://www.irctc.co.in/online-charts/api/trainComposition`
+  - `POST https://www.irctc.co.in/online-charts/api/vacantBerth`
+  - `POST https://www.irctc.co.in/online-charts/api/coachComposition`
+- **Method:** POST (JSON bodies), no login/captcha required
+- **Used for:** `irctc_reservation_chart()` only
+
+**TLS Compatibility:**
+- `indianrail.gov.in` only accepts legacy static-RSA TLS 1.2 cipher suites,
+  which OpenSSL's default cipher list no longer offers. All sessions in this
+  library widen the cipher list (`DEFAULT@SECLEVEL=1`) so the PNR endpoint
+  handshakes correctly. See `PNR_TLS_FIX.md` for the full diagnosis.
+
 ---
 
 ## Limitations & Caveats
@@ -1085,7 +1189,21 @@ info = client.train_info("12301")
 **Problem:** Missing platform information
 ```python
 # Solution: Platform may not be announced yet
-# Check closer to departure time
+# Check closer to departure
+```
+
+**Problem:** `NTESError: pnr check failed after retries: ...`
+```python
+# The message now carries the real cause. Common causes:
+# - TLS handshake failure: fixed in 1.2.0 (cipher list widened)
+# - "captcha not matched": transient - retry, or increase retries
+client = NTESClient(retries=3)
+```
+
+**Problem:** `IRCTCError: ... Chart not prepared`
+```python
+# Charts are only prepared a few hours before departure.
+# Try again closer to the journey date.
 ```
 
 ### Debug Mode
@@ -1192,17 +1310,19 @@ pytest -v
 ```
 ntes-client/
 ├── ntes/
-│   ├── __init__.py      # Package exports
-│   ├── client.py        # Main client class
-│   ├── crypto.py        # Encryption layer
-│   ├── pnr.py           # PNR captcha solver
-│   ├── exceptions.py    # Custom exceptions
-│   └── utils.py         # Helper functions
+│   ├── __init__.py        # Package exports
+│   ├── client.py          # Main client class (NTES API + PNR)
+│   ├── crypto.py          # Encryption layer
+│   ├── pnr.py             # PNR captcha solver
+│   ├── irctc.py           # IRCTC reservation chart lookups
+│   ├── exceptions.py      # Custom exceptions
+│   └── utils.py           # Helper functions
 ├── tests/
-│   ├── test_client.py   # Client tests
-│   └── test_crypto.py   # Crypto tests
+│   ├── test_client.py     # Client tests
+│   └── test_crypto.py     # Crypto tests
+├── PNR_TLS_FIX.md         # TLS/cipher root-cause write-up
 ├── README.md
-├── setup.py
+├── pyproject.toml
 └── requirements.txt
 ```
 
@@ -1237,6 +1357,9 @@ A: PNR status checking is supported via the `pnr_status()` method. Note that it 
 
 **Q: How do I find trains between two stations?**  
 A: Use the `trains_between(from_station, to_station)` method. It returns all trains with timings, duration, train types, and operating days. You can filter results by travel time, train type, or availability on specific days.
+
+**Q: Can I get reservation charts?**  
+A: Yes — use the `irctc_reservation_chart(train_no, boarding_station, journey_date)` function (alias: `reservation_chart`). It pulls data from IRCTC's official online-charts service and returns chart preparation times, coach composition, and optionally vacant berths and full berth-level layouts. Charts only exist a few hours before departure.
 
 **Q: How do I report bugs?**  
 A: Open an issue on GitHub with reproduction steps.
@@ -1278,7 +1401,18 @@ Not intended for:
 
 ## Changelog
 
-### Version 1.1.3 (Latest)
+### Version 1.2.0 (Latest)
+- Added `irctc_reservation_chart()` / `reservation_chart()` for IRCTC
+  reservation charts (coach composition, vacant berths, berth-level layouts)
+- New `IRCTCError` exception for chart lookup failures
+- **Fixed PNR status failing with "pnr check failed after retries"**:
+  `indianrail.gov.in` changed its TLS config to accept only legacy static-RSA
+  cipher suites; sessions now widen the cipher list accordingly (see
+  `PNR_TLS_FIX.md`)
+- `pnr_status()` errors now include the underlying cause instead of a
+  generic message
+
+### Version 1.1.3
 - Added `trains_between()` method for route planning
 - Find all trains between two stations with timings and details
 - Filter by train type, travel time, and operating days
@@ -1308,6 +1442,6 @@ Special thanks to the open-source community for cryptography libraries.
 
 ---
 
-**Last Updated:** May 2026  
-**Library Version:** 1.1.3  
+**Last Updated:** October 2026  
+**Library Version:** 1.2.0  
 **Python Compatibility:** 3.7+
