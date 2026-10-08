@@ -1131,7 +1131,7 @@ Return to user
 - `indianrail.gov.in` only accepts legacy static-RSA TLS 1.2 cipher suites,
   which OpenSSL's default cipher list no longer offers. All sessions in this
   library widen the cipher list (`DEFAULT@SECLEVEL=1`) so the PNR endpoint
-  handshakes correctly. See `PNR_TLS_FIX.md` for the full diagnosis.
+  handshakes correctly.
 
 ---
 
@@ -1195,7 +1195,7 @@ info = client.train_info("12301")
 **Problem:** `NTESError: pnr check failed after retries: ...`
 ```python
 # The message now carries the real cause. Common causes:
-# - TLS handshake failure: fixed in 1.2.0 (cipher list widened)
+# - TLS handshake failure: fixed in 0.1.4 (cipher list widened)
 # - "captcha not matched": transient - retry, or increase retries
 client = NTESClient(retries=3)
 ```
@@ -1320,7 +1320,6 @@ ntes-client/
 ├── tests/
 │   ├── test_client.py     # Client tests
 │   └── test_crypto.py     # Crypto tests
-├── PNR_TLS_FIX.md         # TLS/cipher root-cause write-up
 ├── README.md
 ├── pyproject.toml
 └── requirements.txt
@@ -1401,31 +1400,30 @@ Not intended for:
 
 ## Changelog
 
-### Version 1.2.0 (Latest)
+### Version 0.1.4 (Latest)
 - Added `irctc_reservation_chart()` / `reservation_chart()` for IRCTC
   reservation charts (coach composition, vacant berths, berth-level layouts)
 - New `IRCTCError` exception for chart lookup failures
 - **Fixed PNR status failing with "pnr check failed after retries"**:
   `indianrail.gov.in` changed its TLS config to accept only legacy static-RSA
-  cipher suites; sessions now widen the cipher list accordingly (see
-  `PNR_TLS_FIX.md`)
+  cipher suites; sessions now widen the cipher list accordingly
 - `pnr_status()` errors now include the underlying cause instead of a
   generic message
 
-### Version 1.1.3
+### Version 0.1.3
 - Added `trains_between()` method for route planning
 - Find all trains between two stations with timings and details
 - Filter by train type, travel time, and operating days
 
-### Version 1.1.2
+### Version 0.1.2
 - Added support for PNR Status checking
 - Automatic captcha solving for PNR queries
 
-### Version 1.1.0
+### Version 0.1.1
 - Added fallback import for Crypto / Cryptodome
 - Fixes ModuleNotFoundError on some Linux/Termux setups
 
-### Version 1.0.0
+### Version 0.1.0
 - Initial release
 - Core API methods
 - Encryption handling
@@ -1443,5 +1441,5 @@ Special thanks to the open-source community for cryptography libraries.
 ---
 
 **Last Updated:** October 2026  
-**Library Version:** 1.2.0  
+**Library Version:** 0.1.4  
 **Python Compatibility:** 3.7+

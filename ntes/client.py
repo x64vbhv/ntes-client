@@ -11,7 +11,7 @@ Two distinct backends are used:
 
 All https sessions are built by `_new_session()`, which widens the TLS cipher
 list because indianrail.gov.in only accepts legacy static-RSA TLS 1.2 suites
-that OpenSSL's defaults no longer offer (see PNR_TLS_FIX.md).
+that OpenSSL's defaults no longer offer.
 """
 
 import json
